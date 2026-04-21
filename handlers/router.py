@@ -457,6 +457,7 @@ def handle_callback(cq: dict):
     chat_id = cq["message"]["chat"]["id"]
     user_id = chat_id
     data = cq.get("data", "")
+    print(f"[callback] chat_id={chat_id} data={data}") 
     user = user_repo.get_user(user_id)
 
     if data == "add_record":

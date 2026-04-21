@@ -517,13 +517,13 @@ def handle_callback(cq: dict):
             f"Для режима «{training_mode}» упражнений по группе «{group}» не найдено.",
              exercises_menu())
 
-elif data.startswith("upd:"):
-    field = data.split(":")[1]
-    prompts = {
-        "weight": ("⚖️ Введи новый вес (кг):", "update_weight"),
-        "height": ("📏 Введи новый рост (см):", "update_height"),
-        "goal": ("🎯 Введи новую цель:", "update_goal"),
-        "training_mode": ("🏠 Введи режим (дом / турники / зал):", "update_training_mode"),
+    elif data.startswith("upd:"):
+        field = data.split(":")[1]
+        prompts = {
+            "weight": ("⚖️ Введи новый вес (кг):", "update_weight"),
+            "height": ("📏 Введи новый рост (см):", "update_height"),
+            "goal": ("🎯 Введи новую цель:", "update_goal"),
+            "training_mode": ("🏠 Введи режим (дом / турники / зал):", "update_training_mode"),
         }
     if field in prompts:
         msg, step = prompts[field]

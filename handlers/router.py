@@ -493,20 +493,20 @@ def handle_callback(cq: dict):
             send_message(chat_id, text[:4000], nutrition_menu())
 
     elif data.startswith("muscle:"):
-    group = data.split(":", 1)[1]
-    # Получаем режим тренировок пользователя
-    training_mode = (user or {}).get("training_mode", "зал")
+        group = data.split(":", 1)[1]
+        # Получаем режим тренировок пользователя
+        training_mode = (user or {}).get("training_mode", "зал")
     
-    # Маппинг режимов — дом и турники видят своё + базовые
-    mode_filter = {
-        "зал": ["зал"],
-        "дом": ["дом"],
-        "турники": ["турники", "дом"],  # турники видят и домашние тоже
-    }
-    allowed_modes = mode_filter.get(training_mode, ["зал"])
+        # Маппинг режимов — дом и турники видят своё + базовые
+        mode_filter = {
+            "зал": ["зал"],
+            "дом": ["дом"],
+            "турники": ["турники", "дом"],  # турники видят и домашние тоже
+        }
+        allowed_modes = mode_filter.get(training_mode, ["зал"])
     
-    all_exercises = get_exercises_by_group(group)
-    exercises = [e for e in all_exercises if e.get("training_mode") in allowed_modes]
+        all_exercises = get_exercises_by_group(group)
+        exercises = [e for e in all_exercises if e.get("training_mode") in allowed_modes]
     
     if exercises:
         lines = [f"• {e['name']}" for e in exercises]

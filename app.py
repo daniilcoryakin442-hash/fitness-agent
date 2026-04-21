@@ -1,5 +1,6 @@
 # app.py — точка входа Flask, обработка вебхука
 
+import traceback
 from flask import Flask, request, Response
 from config import PORT
 from handlers.router import handle_update
@@ -12,13 +13,14 @@ def index():
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    """Telegram отправляет апдейты сюда. Сразу возвращаем 200."""
     try:
         update = request.get_json(force=True)
         if update:
+            print(f"[update] {update}")
             handle_update(update)
     except Exception as e:
         print(f"[webhook error] {e}")
+        traceback.print_exc()
     return Response("ok", status=200)
 
 if __name__ == "__main__":

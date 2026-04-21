@@ -14,7 +14,15 @@ def send_message(chat_id: int, text: str, reply_markup=None, parse_mode: str = "
     if reply_markup:
         payload["reply_markup"] = json.dumps(reply_markup)
     try:
-        requests.post(f"{TELEGRAM_API}/sendMessage", json=payload, timeout=10)
+        print(f"[telegram] sending message to {chat_id}, markup={reply_markup is not None}")
+        r = requests.post(
+            f"{TELEGRAM_API}/sendMessage",
+            json=payload,
+            timeout=5  # жёсткий таймаут 5 секунд
+        )
+        print(f"[telegram] response {r.status_code}: {r.text[:200]}")
+    except requests.exceptions.Timeout:
+        print(f"[telegram] timeout sending to {chat_id}")
     except Exception as e:
         print(f"[send_message error] {e}")
 
@@ -44,5 +52,11 @@ def send_document(chat_id: int, file_bytes: bytes, filename: str, caption: str =
 
 def answer_callback(callback_query_id: str):
     """Ответить на callback-запрос (убрать часики)."""
-    requests.post(f"{TELEGRAM_API}/answerCallbackQuery",
-                  json={"callback_query_id": callback_query_id}, timeout=5)
+    try:
+        requests.post(
+            f"{TELEGRAM_API}/answerCallbackQuery",
+            json={"callback_query_id": callback_query_id},
+            timeout=5
+        )
+    except Exception as e:
+        print(f"[answer_callback error] {e}")

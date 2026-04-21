@@ -513,11 +513,11 @@ def handle_callback(cq: dict):
         text = (f"<b>💪 {group}</b> — режим: {training_mode}\n\n" + "\n".join(lines))
         send_message(chat_id, text, exercises_menu())
     else:
-        send_message(chat_id,
+         send_message(chat_id,
             f"Для режима «{training_mode}» упражнений по группе «{group}» не найдено.",
-            exercises_menu())
+             exercises_menu())
 
-    elif data.startswith("upd:"):
+ elif data.startswith("upd:"):
         field = data.split(":")[1]
         prompts = {
             "weight": ("⚖️ Введи новый вес (кг):", "update_weight"),

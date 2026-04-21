@@ -4,17 +4,30 @@ from db.client import get_client
 
 def get_muscle_groups() -> list:
     """Получить уникальные группы мышц."""
-    res = get_client().table("exercises_catalog").select("muscle_group").execute()
-    groups = list({r["muscle_group"] for r in res.data}) if res.data else []
-    return sorted(groups)
+    try:
+        res = get_client().table("exercises_catalog").select("muscle_group").execute()
+        groups = list({r["muscle_group"] for r in res.data}) if res.data else []
+        print(f"[exercises] muscle groups: {groups}")
+        return sorted(groups)
+    except Exception as e:
+        print(f"[exercises error] get_muscle_groups: {e}")
+        return []
 
 def get_exercises_by_group(muscle_group: str) -> list:
     """Упражнения по группе мышц."""
-    res = get_client().table("exercises_catalog")\
-        .select("*").eq("muscle_group", muscle_group).execute()
-    return res.data or []
+    try:
+        res = get_client().table("exercises_catalog")\
+            .select("*").eq("muscle_group", muscle_group).execute()
+        return res.data or []
+    except Exception as e:
+        print(f"[exercises error] get_exercises_by_group: {e}")
+        return []
 
 def get_all_exercises() -> list:
     """Все упражнения из каталога."""
-    res = get_client().table("exercises_catalog").select("*").execute()
-    return res.data or []
+    try:
+        res = get_client().table("exercises_catalog").select("*").execute()
+        return res.data or []
+    except Exception as e:
+        print(f"[exercises error] get_all_exercises: {e}")
+        return []

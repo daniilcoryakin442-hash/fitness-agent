@@ -53,9 +53,8 @@ def _profile_text(u: dict) -> str:
 # ── Главный диспетчер ────────────────────────────────────────────────
 
 def handle_update(update: dict):
-    """Точка входа для всех апдейтов от Telegram."""
-
-    # Callback-запросы (inline-кнопки)
+    print(f"[handle_update] keys: {list(update.keys())}") 
+    
     if "callback_query" in update:
         cq = update["callback_query"]
         answer_callback(cq["id"])

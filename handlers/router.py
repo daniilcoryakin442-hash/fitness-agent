@@ -493,14 +493,29 @@ def handle_callback(cq: dict):
             send_message(chat_id, text[:4000], nutrition_menu())
 
     elif data.startswith("muscle:"):
-        group = data.split(":", 1)[1]
-        exercises = get_exercises_by_group(group)
-        if exercises:
-            lines = [f"• {e['name']}" for e in exercises]
-            text = f"<b>💪 {group}</b>\n\n" + "\n".join(lines)
-            send_message(chat_id, text, exercises_menu())
-        else:
-            send_message(chat_id, "Упражнения не найдены.", exercises_menu())
+    group = data.split(":", 1)[1]
+    # Получаем режим тренировок пользователя
+    training_mode = (user or {}).get("training_mode", "зал")
+    
+    # Маппинг режимов — дом и турники видят своё + базовые
+    mode_filter = {
+        "зал": ["зал"],
+        "дом": ["дом"],
+        "турники": ["турники", "дом"],  # турники видят и домашние тоже
+    }
+    allowed_modes = mode_filter.get(training_mode, ["зал"])
+    
+    all_exercises = get_exercises_by_group(group)
+    exercises = [e for e in all_exercises if e.get("training_mode") in allowed_modes]
+    
+    if exercises:
+        lines = [f"• {e['name']}" for e in exercises]
+        text = (f"<b>💪 {group}</b> — режим: {training_mode}\n\n" + "\n".join(lines))
+        send_message(chat_id, text, exercises_menu())
+    else:
+        send_message(chat_id,
+            f"Для режима «{training_mode}» упражнений по группе «{group}» не найдено.",
+            exercises_menu())
 
     elif data.startswith("upd:"):
         field = data.split(":")[1]

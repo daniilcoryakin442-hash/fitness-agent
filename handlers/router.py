@@ -50,11 +50,21 @@ def _profile_text(u: dict) -> str:
     )
 
 
+def _get_allowed_modes(training_mode: str) -> list:
+    """Вернуть список допустимых режимов для фильтрации упражнений."""
+    mode_filter = {
+        "зал": ["зал"],
+        "дом": ["дом"],
+        "турники": ["турники", "дом"],
+    }
+    return mode_filter.get(training_mode, ["зал"])
+
+
 # ── Главный диспетчер ────────────────────────────────────────────────
 
 def handle_update(update: dict):
-    print(f"[handle_update] keys: {list(update.keys())}") 
-    
+    print(f"[handle_update] keys: {list(update.keys())}")
+
     if "callback_query" in update:
         cq = update["callback_query"]
         answer_callback(cq["id"])
@@ -72,10 +82,8 @@ def handle_update(update: dict):
     if not text:
         return
 
-    # Убедиться, что пользователь существует
     user = user_repo.get_user(user_id)
 
-    # ── Команды ──
     if text == "/start":
         handle_start(chat_id, user_id, message)
         return
@@ -83,7 +91,6 @@ def handle_update(update: dict):
         handle_admin(chat_id)
         return
 
-    # ── Натуральные команды (regex) ──
     if parsed := parse_sleep(text):
         add_sleep(user_id, parsed)
         send_message(chat_id, f"😴 Записал: {parsed} ч сна.", main_menu())
@@ -110,7 +117,6 @@ def handle_update(update: dict):
             send_message(chat_id, f"✅ Упражнение «{parsed}» добавлено в ваш список.", main_menu())
         return
 
-    # ── Состояния (мультишаговые диалоги) ──
     state = get_state(user_id)
     step = state.get("step", "")
 
@@ -118,7 +124,6 @@ def handle_update(update: dict):
         handle_state(chat_id, user_id, text, step, state.get("data", {}), user)
         return
 
-    # ── Кнопки меню ──
     handle_menu(chat_id, user_id, text, user)
 
 
@@ -139,12 +144,10 @@ def handle_start(chat_id, user_id, message):
             f"Чем могу помочь?", main_menu())
 
 
-# ── Онбординг и состояния ─────────────────────────────────────────────
+# ── Состояния ────────────────────────────────────────────────────────
 
 def handle_state(chat_id, user_id, text, step, data, user):
-    """Обработка пошаговых диалогов."""
 
-    # Онбординг
     if step == "onboarding_age":
         try:
             age = int(text)
@@ -175,12 +178,15 @@ def handle_state(chat_id, user_id, text, step, data, user):
 
     elif step == "onboarding_goal":
         user_repo.update_user(user_id, {"goal": text})
-        clear_state(user_id)
+        set_state(user_id, "onboarding_training_mode")
         send_message(chat_id,
-            "✅ <b>Профиль создан!</b> Теперь я смогу составлять персональные планы.\n\n"
-            "Выбери раздел:", main_menu())
+            "🏠 Выбери режим тренировок:",
+            build_inline([
+                ("🏋️ Зал", "ob_mode:зал"),
+                ("🏠 Дом", "ob_mode:дом"),
+                ("🤸 Турники / улица", "ob_mode:турники"),
+            ]))
 
-    # Запись сна
     elif step == "input_sleep":
         try:
             hours = float(text.replace(",", "."))
@@ -190,7 +196,6 @@ def handle_state(chat_id, user_id, text, step, data, user):
         except ValueError:
             send_message(chat_id, "Введи число, например: 7.5")
 
-    # Изменение нормы сна
     elif step == "set_sleep_target":
         try:
             t = float(text.replace(",", "."))
@@ -200,7 +205,6 @@ def handle_state(chat_id, user_id, text, step, data, user):
         except ValueError:
             send_message(chat_id, "Введи число, например: 8")
 
-    # Изменение веса
     elif step == "update_weight":
         try:
             w = float(text.replace(",", "."))
@@ -211,7 +215,6 @@ def handle_state(chat_id, user_id, text, step, data, user):
         except ValueError:
             send_message(chat_id, "Введи число, например: 72")
 
-    # Изменение роста
     elif step == "update_height":
         try:
             h = float(text.replace(",", "."))
@@ -221,29 +224,25 @@ def handle_state(chat_id, user_id, text, step, data, user):
         except ValueError:
             send_message(chat_id, "Введи число, например: 175")
 
-    # Изменение цели
     elif step == "update_goal":
         user_repo.update_user(user_id, {"goal": text})
         clear_state(user_id)
         send_message(chat_id, f"✅ Цель обновлена: {text}", settings_menu())
 
-    # Изменение режима тренировок
     elif step == "update_training_mode":
         user_repo.update_user(user_id, {"training_mode": text})
         clear_state(user_id)
         send_message(chat_id, f"✅ Режим обновлён: {text}", settings_menu())
 
-    # Расписание
     elif step == "set_schedule":
         try:
             schedule = json.loads(text)
         except Exception:
-            schedule = text  # сохраняем как строку
+            schedule = text
         user_repo.update_user(user_id, {"custom_schedule": schedule})
         clear_state(user_id)
         send_message(chat_id, "✅ Расписание сохранено!", workouts_menu())
 
-    # Добавление рекорда (пошагово)
     elif step == "add_record_exercise":
         set_state(user_id, "add_record_weight", {"exercise": text})
         send_message(chat_id, f"💪 Упражнение: {text}\nВведи вес (кг):")
@@ -279,9 +278,7 @@ def handle_state(chat_id, user_id, text, step, data, user):
 # ── Меню ─────────────────────────────────────────────────────────────
 
 def handle_menu(chat_id, user_id, text, user):
-    """Обработка нажатий кнопок меню."""
 
-    # Главное меню
     if text == "📊 Мой профиль":
         if not user:
             send_message(chat_id, "Сначала введи /start", main_menu())
@@ -296,7 +293,6 @@ def handle_menu(chat_id, user_id, text, user):
             msg += "Пиши напрямую: @admin"
         send_message(chat_id, msg, main_menu())
 
-    # Тренировки
     elif text == "💪 Тренировки":
         send_message(chat_id, "💪 <b>Тренировки</b>", workouts_menu())
 
@@ -339,7 +335,6 @@ def handle_menu(chat_id, user_id, text, user):
                 "Отправь новое расписание (текстом или JSON):")
             set_state(user_id, "set_schedule")
 
-    # Питание
     elif text == "🍎 Питание":
         send_message(chat_id, "🍎 <b>Питание</b>", nutrition_menu())
 
@@ -370,9 +365,8 @@ def handle_menu(chat_id, user_id, text, user):
             buttons = [(c, f"cuisine:{c}") for c in cuisines]
             send_message(chat_id, "🌍 Выбери кухню:", build_inline(buttons))
         else:
-            send_message(chat_id, "Рецепты не найдены. Проверь базу данных.", nutrition_menu())
+            send_message(chat_id, "Рецепты не найдены.", nutrition_menu())
 
-    # Сон
     elif text == "😴 Сон":
         send_message(chat_id, "😴 <b>Сон</b>", sleep_menu())
 
@@ -406,9 +400,12 @@ def handle_menu(chat_id, user_id, text, user):
             f"🎯 Текущая норма сна: <b>{target} ч</b>\n\nВведи новую норму:")
         set_state(user_id, "set_sleep_target")
 
-    # Упражнения
     elif text == "🏋️ Упражнения":
-        send_message(chat_id, "🏋️ <b>Упражнения</b>", exercises_menu())
+        mode = (user or {}).get("training_mode", "зал")
+        mode_emoji = {"зал": "🏋️", "дом": "🏠", "турники": "🤸"}.get(mode, "💪")
+        send_message(chat_id,
+            f"🏋️ <b>Упражнения</b>\nРежим: {mode_emoji} <b>{mode}</b>",
+            exercises_menu())
 
     elif text == "💪 Выбрать группу мышц":
         groups = get_muscle_groups()
@@ -416,9 +413,8 @@ def handle_menu(chat_id, user_id, text, user):
             buttons = [(g, f"muscle:{g}") for g in groups]
             send_message(chat_id, "Выбери группу мышц:", build_inline(buttons))
         else:
-            send_message(chat_id, "Каталог пуст. Добавь упражнения в таблицу exercises_catalog.")
+            send_message(chat_id, "Каталог пуст.")
 
-    # Настройки
     elif text == "🔧 Настройки":
         send_message(chat_id, "🔧 <b>Настройки</b>", settings_menu())
 
@@ -427,24 +423,29 @@ def handle_menu(chat_id, user_id, text, user):
             ("⚖️ Вес", "upd:weight"),
             ("📏 Рост", "upd:height"),
             ("🎯 Цель", "upd:goal"),
-            ("🏠 Режим тренировок", "upd:training_mode"),
         ]))
+
+    elif text == "🏠 Режим тренировок":
+        mode = (user or {}).get("training_mode", "зал")
+        send_message(chat_id,
+            f"🏠 Текущий режим: <b>{mode}</b>\n\nВыбери новый:",
+            build_inline([
+                ("🏋️ Зал", "set_mode:зал"),
+                ("🏠 Дом", "set_mode:дом"),
+                ("🤸 Турники / улица", "set_mode:турники"),
+            ]))
 
     elif text == "📤 Экспорт данных":
         csv_bytes = export_user_data(user_id)
-        send_document(chat_id, csv_bytes, "my_fitness_data.csv",
-                      "📤 Твои данные (вес, сон)")
+        send_document(chat_id, csv_bytes, "my_fitness_data.csv", "📤 Твои данные (вес, сон)")
         send_message(chat_id, "✅ Экспорт готов!", settings_menu())
 
     elif text == "🔙 Назад":
         send_message(chat_id, "Главное меню:", main_menu())
 
     else:
-        # Неизвестная команда — AI-ответ
         if user:
-            answer = ask_ai(
-                f"Пользователь написал: «{text}». Ответь как фитнес-тренер кратко.",
-            )
+            answer = ask_ai(f"Пользователь написал: «{text}». Ответь как фитнес-тренер кратко.")
             send_message(chat_id, answer, main_menu())
         else:
             send_message(chat_id, "Введи /start для начала.", main_menu())
@@ -456,10 +457,30 @@ def handle_callback(cq: dict):
     chat_id = cq["message"]["chat"]["id"]
     user_id = chat_id
     data = cq.get("data", "")
-    print(f"[callback] chat_id={chat_id} data={data}") 
+    print(f"[callback] chat_id={chat_id} data={data}")
     user = user_repo.get_user(user_id)
 
-    if data == "add_record":
+    if data.startswith("ob_mode:"):
+        mode = data.split(":", 1)[1]
+        user_repo.update_user(user_id, {"training_mode": mode})
+        clear_state(user_id)
+        mode_emoji = {"зал": "🏋️", "дом": "🏠", "турники": "🤸"}.get(mode, "💪")
+        send_message(chat_id,
+            f"✅ <b>Профиль создан!</b>\n"
+            f"Режим тренировок: {mode_emoji} <b>{mode}</b>\n\n"
+            f"Теперь я смогу составлять персональные планы.\n\n"
+            f"Выбери раздел:", main_menu())
+
+    elif data.startswith("set_mode:"):
+        mode = data.split(":", 1)[1]
+        user_repo.update_user(user_id, {"training_mode": mode})
+        mode_emoji = {"зал": "🏋️", "дом": "🏠", "турники": "🤸"}.get(mode, "💪")
+        send_message(chat_id,
+            f"✅ Режим обновлён: {mode_emoji} <b>{mode}</b>\n\n"
+            f"Упражнения теперь подбираются под этот режим.",
+            settings_menu())
+
+    elif data == "add_record":
         set_state(user_id, "add_record_exercise")
         send_message(chat_id, "Введи название упражнения:")
 
@@ -494,28 +515,27 @@ def handle_callback(cq: dict):
 
     elif data.startswith("muscle:"):
         group = data.split(":", 1)[1]
-        # Получаем режим тренировок пользователя
         training_mode = (user or {}).get("training_mode", "зал")
-    
-        # Маппинг режимов — дом и турники видят своё + базовые
-        mode_filter = {
-            "зал": ["зал"],
-            "дом": ["дом"],
-            "турники": ["турники", "дом"],  # турники видят и домашние тоже
-        }
-        allowed_modes = mode_filter.get(training_mode, ["зал"])
-    
+        allowed_modes = _get_allowed_modes(training_mode)
+
         all_exercises = get_exercises_by_group(group)
         exercises = [e for e in all_exercises if e.get("training_mode") in allowed_modes]
-    
-    if exercises:
-        lines = [f"• {e['name']}" for e in exercises]
-        text = (f"<b>💪 {group}</b> — режим: {training_mode}\n\n" + "\n".join(lines))
-        send_message(chat_id, text, exercises_menu())
-    else:
-         send_message(chat_id,
-            f"Для режима «{training_mode}» упражнений по группе «{group}» не найдено.",
-             exercises_menu())
+
+        mode_emoji = {"зал": "🏋️", "дом": "🏠", "турники": "🤸"}.get(training_mode, "💪")
+
+        if exercises:
+            lines = [f"• {e['name']}" for e in exercises]
+            text = (
+                f"<b>💪 {group}</b> {mode_emoji} {training_mode}\n"
+                f"({len(exercises)} упражнений)\n\n" +
+                "\n".join(lines)
+            )
+            send_message(chat_id, text, exercises_menu())
+        else:
+            send_message(chat_id,
+                f"⚠️ Для режима «{training_mode}» упражнений по группе «{group}» не найдено.\n\n"
+                f"Смени режим: 🔧 Настройки → 🏠 Режим тренировок",
+                exercises_menu())
 
     elif data.startswith("upd:"):
         field = data.split(":")[1]
@@ -523,15 +543,14 @@ def handle_callback(cq: dict):
             "weight": ("⚖️ Введи новый вес (кг):", "update_weight"),
             "height": ("📏 Введи новый рост (см):", "update_height"),
             "goal": ("🎯 Введи новую цель:", "update_goal"),
-            "training_mode": ("🏠 Введи режим (дом / турники / зал):", "update_training_mode"),
         }
-    if field in prompts:
-        msg, step = prompts[field]
-        set_state(user_id, step)
-        send_message(chat_id, msg)
+        if field in prompts:
+            msg, step = prompts[field]
+            set_state(user_id, step)
+            send_message(chat_id, msg)
 
 
-# ── Админ-команда ────────────────────────────────────────────────────
+# ── Админ ─────────────────────────────────────────────────────────────
 
 def handle_admin(chat_id):
     all_users = user_repo.get_all_users()

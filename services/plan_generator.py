@@ -1,10 +1,9 @@
-# services/plan_generator.py — генерация плана тренировок на месяц
+# services/plan_generator.py
 
 import datetime
 from services.ai_service import ask_ai
 
 def generate_monthly_plan(user: dict) -> str:
-    """Сгенерировать план тренировок на 30 дней через ИИ."""
     today = datetime.date.today().strftime("%d.%m.%Y")
     schedule = user.get("custom_schedule") or "не задано"
     prompt = f"""
@@ -19,13 +18,20 @@ def generate_monthly_plan(user: dict) -> str:
 - Желаемые повторения: {user.get('target_reps', 8)}
 - Расписание: {schedule}
 
-Для каждого дня укажи реальную дату и конкретные упражнения (название, подходы × повторения).
-Дни отдыха обозначь явно. Формат: "ДД.ММ.YYYY — [описание]".
+ВАЖНО: Каждый день начинай строго с даты в формате ДД.ММ.YYYY в начале строки.
+Пример формата:
+24.04.2026 — Грудь + трицепс
+- Жим штанги лёжа: 4×8
+- Жим гантелей: 3×10
+- Отжимания на брусьях: 3×12
+
+25.04.2026 — ОТДЫХ
+
+Дни отдыха обозначай как "ОТДЫХ". Не пропускай ни одной даты.
 """
     return ask_ai(prompt)
 
 def generate_nutrition_plan(user: dict) -> str:
-    """Сгенерировать план питания на месяц."""
     today = datetime.date.today().strftime("%d.%m.%Y")
     prompt = f"""
 Составь план питания на 30 дней начиная с {today}.
@@ -34,23 +40,42 @@ def generate_nutrition_plan(user: dict) -> str:
 - Цель: {user.get('goal', 'здоровое питание')}
 - Ограничения: {user.get('restrictions', 'нет')}
 
-Для каждого дня укажи примерный рацион (завтрак, обед, ужин, перекус) с КБЖУ.
+ВАЖНО: Каждый день начинай строго с даты в формате ДД.ММ.YYYY.
+Для каждого дня: завтрак, обед, ужин, перекус с КБЖУ.
 """
     return ask_ai(prompt)
 
 def get_today_workout(user: dict, plan_text: str) -> str:
-    """Вытащить из плана тренировку на сегодня."""
+    """Найти тренировку на сегодня из плана."""
+    if not plan_text:
+        return "📅 План ещё не сгенерирован. Нажми «📆 План на месяц»."
+
     today = datetime.date.today().strftime("%d.%m.%Y")
-    if today in plan_text:
-        lines = plan_text.split("\n")
-        result = []
-        capture = False
-        for line in lines:
-            if today in line:
-                capture = True
-            elif capture and line.strip().startswith("0") or (capture and "." in line[:6]):
-                break
-            if capture:
-                result.append(line)
-        return "\n".join(result).strip() or f"Тренировка на {today} не найдена в плане."
-    return f"📅 Тренировка на {today}: план ещё не сгенерирован. Нажмите «📆 План на месяц»."
+
+    # Ищем строку с сегодняшней датой
+    lines = plan_text.split("\n")
+    start_idx = None
+    for i, line in enumerate(lines):
+        if line.strip().startswith(today):
+            start_idx = i
+            break
+
+    if start_idx is None:
+        return (f"📅 Тренировка на {today} не найдена в плане.\n\n"
+                f"Возможно план устарел — нажми «📆 План на месяц» чтобы создать новый.")
+
+    # Собираем строки до следующей даты
+    result = []
+    for i in range(start_idx, len(lines)):
+        line = lines[i]
+        # Следующая дата — останавливаемся
+        if i > start_idx and len(line) >= 10 and line[2:3] == "." and line[5:6] == ".":
+            break
+        result.append(line)
+
+    workout = "\n".join(result).strip()
+
+    if "ОТДЫХ" in workout.upper():
+        return f"😴 {today} — день отдыха! Восстанавливайся и набирайся сил."
+
+    return workout

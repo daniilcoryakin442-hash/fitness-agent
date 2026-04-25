@@ -5,7 +5,10 @@ import datetime
 from config import ADMIN_ID, FEEDBACK_FORM_URL
 from db import user_repo
 from db.measurements import add_sleep, add_weight, get_sleep_avg, get_sleep_history
-from db.exercises import get_muscle_groups, get_exercises_by_group
+from db.exercises import (
+    get_muscle_groups, get_exercises_by_group,
+    get_user_all_exercise_ids, toggle_user_exercise, get_exercise_name
+)
 from db.recipes import get_cuisines, get_categories, get_recipes, get_recipe_by_id
 from services.ai_service import ask_ai
 from services.plan_generator import (
@@ -60,9 +63,46 @@ def _get_allowed_modes(training_mode: str) -> list:
     return mode_filter.get(training_mode, ["зал"])
 
 
+def _show_exercise_group(chat_id: int, user_id: int, group: str, training_mode: str, header: str = ""):
+    """Показать список упражнений группы с кнопками вкл/выкл."""
+    allowed_modes = _get_allowed_modes(training_mode)
+    all_exercises = get_exercises_by_group(group)
+    exercises = [e for e in all_exercises if e.get("training_mode") in allowed_modes]
+
+    if not exercises:
+        send_message(chat_id,
+            f"⚠️ Для режима «{training_mode}» упражнений по группе «{group}» нет.\n"
+            f"Смени режим: 🔧 Настройки → 🏠 Режим тренировок",
+            exercises_menu())
+        return
+
+    user_ex_map = get_user_all_exercise_ids(user_id)
+    mode_emoji = {"зал": "🏋️", "дом": "🏠", "турники": "🤸"}.get(training_mode, "💪")
+
+    buttons = []
+    for ex in exercises:
+        ex_id = ex["id"]
+        is_active = user_ex_map.get(ex_id, False)
+        icon = "✅" if is_active else "➕"
+        buttons.append((f"{icon} {ex['name']}", f"ex_toggle:{ex_id}:{group}"))
+
+    active_count = sum(1 for ex in exercises if user_ex_map.get(ex["id"], False))
+
+    text = (
+        f"{header}"
+        f"<b>💪 {group}</b> {mode_emoji} {training_mode}\n"
+        f"Активных: <b>{active_count}</b> из {len(exercises)}\n\n"
+        f"✅ — в твоём плане\n"
+        f"➕ — не выбрано\n\n"
+        f"Нажми чтобы включить/выключить:"
+    )
+    send_message(chat_id, text, build_inline(buttons))
+
+
 # ── Главный диспетчер ────────────────────────────────────────────────
 
 def handle_update(update: dict):
+    """Точка входа для всех апдейтов от Telegram."""
     print(f"[handle_update] keys: {list(update.keys())}")
 
     if "callback_query" in update:
@@ -114,7 +154,7 @@ def handle_update(update: dict):
             custom = user.get("custom_exercises") or {}
             custom[parsed] = True
             user_repo.update_user(user_id, {"custom_exercises": custom})
-            send_message(chat_id, f"✅ Упражнение «{parsed}» добавлено в ваш список.", main_menu())
+            send_message(chat_id, f"✅ Упражнение «{parsed}» добавлено.", main_menu())
         return
 
     state = get_state(user_id)
@@ -310,7 +350,7 @@ def handle_menu(chat_id, user_id, text, user):
         save_workout_plan(user_id, plan)
         for i in range(0, len(plan), 4000):
             send_message(chat_id, plan[i:i+4000])
-        send_message(chat_id, "✅ План сохранён!", workouts_menu())
+        send_message(chat_id, "✅ План сохранён! Кнопка «📅 Сегодня» покажет нужную тренировку.", workouts_menu())
 
     elif text == "🏆 Мои рекорды":
         if user:
@@ -404,7 +444,10 @@ def handle_menu(chat_id, user_id, text, user):
         mode = (user or {}).get("training_mode", "зал")
         mode_emoji = {"зал": "🏋️", "дом": "🏠", "турники": "🤸"}.get(mode, "💪")
         send_message(chat_id,
-            f"🏋️ <b>Упражнения</b>\nРежим: {mode_emoji} <b>{mode}</b>",
+            f"🏋️ <b>Упражнения</b>\n"
+            f"Режим: {mode_emoji} <b>{mode}</b>\n\n"
+            f"Выбери группу мышц и отметь нужные упражнения.\n"
+            f"✅ — в плане, ➕ — не выбрано",
             exercises_menu())
 
     elif text == "💪 Выбрать группу мышц":
@@ -460,6 +503,7 @@ def handle_callback(cq: dict):
     print(f"[callback] chat_id={chat_id} data={data}")
     user = user_repo.get_user(user_id)
 
+    # Выбор режима при онбординге
     if data.startswith("ob_mode:"):
         mode = data.split(":", 1)[1]
         user_repo.update_user(user_id, {"training_mode": mode})
@@ -467,10 +511,10 @@ def handle_callback(cq: dict):
         mode_emoji = {"зал": "🏋️", "дом": "🏠", "турники": "🤸"}.get(mode, "💪")
         send_message(chat_id,
             f"✅ <b>Профиль создан!</b>\n"
-            f"Режим тренировок: {mode_emoji} <b>{mode}</b>\n\n"
-            f"Теперь я смогу составлять персональные планы.\n\n"
+            f"Режим: {mode_emoji} <b>{mode}</b>\n\n"
             f"Выбери раздел:", main_menu())
 
+    # Смена режима из настроек
     elif data.startswith("set_mode:"):
         mode = data.split(":", 1)[1]
         user_repo.update_user(user_id, {"training_mode": mode})
@@ -480,6 +524,7 @@ def handle_callback(cq: dict):
             f"Упражнения теперь подбираются под этот режим.",
             settings_menu())
 
+    # Рекорды
     elif data == "add_record":
         set_state(user_id, "add_record_exercise")
         send_message(chat_id, "Введи название упражнения:")
@@ -492,6 +537,7 @@ def handle_callback(cq: dict):
             user_repo.update_user(user_id, {"records": records})
             send_message(chat_id, f"✅ Рекорд «{exercise}» удалён.", workouts_menu())
 
+    # Рецепты
     elif data.startswith("cuisine:"):
         cuisine = data.split(":", 1)[1]
         categories = get_categories(cuisine)
@@ -513,30 +559,30 @@ def handle_callback(cq: dict):
                     f"<b>Приготовление:</b>\n{r['instructions']}")
             send_message(chat_id, text[:4000], nutrition_menu())
 
+    # Упражнения — выбор группы
     elif data.startswith("muscle:"):
         group = data.split(":", 1)[1]
         training_mode = (user or {}).get("training_mode", "зал")
-        allowed_modes = _get_allowed_modes(training_mode)
+        _show_exercise_group(chat_id, user_id, group, training_mode)
 
-        all_exercises = get_exercises_by_group(group)
-        exercises = [e for e in all_exercises if e.get("training_mode") in allowed_modes]
+    # Упражнения — переключение вкл/выкл
+    elif data.startswith("ex_toggle:"):
+        # Формат: ex_toggle:EXERCISE_ID:GROUP
+        parts = data.split(":")
+        exercise_id = int(parts[1])
+        group = parts[2]
 
-        mode_emoji = {"зал": "🏋️", "дом": "🏠", "турники": "🤸"}.get(training_mode, "💪")
+        new_state = toggle_user_exercise(user_id, exercise_id)
+        ex_name = get_exercise_name(exercise_id)
+        icon = "✅ Добавлено в план" if new_state else "❌ Убрано из плана"
 
-        if exercises:
-            lines = [f"• {e['name']}" for e in exercises]
-            text = (
-                f"<b>💪 {group}</b> {mode_emoji} {training_mode}\n"
-                f"({len(exercises)} упражнений)\n\n" +
-                "\n".join(lines)
-            )
-            send_message(chat_id, text, exercises_menu())
-        else:
-            send_message(chat_id,
-                f"⚠️ Для режима «{training_mode}» упражнений по группе «{group}» не найдено.\n\n"
-                f"Смени режим: 🔧 Настройки → 🏠 Режим тренировок",
-                exercises_menu())
+        training_mode = (user or {}).get("training_mode", "зал")
+        _show_exercise_group(
+            chat_id, user_id, group, training_mode,
+            header=f"<b>{icon}:</b> {ex_name}\n\n"
+        )
 
+    # Изменение профиля
     elif data.startswith("upd:"):
         field = data.split(":")[1]
         prompts = {

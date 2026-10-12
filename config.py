@@ -6,10 +6,8 @@ import os
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-# OpenRouter (GPT-4o mini)
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-AI_MODEL = "openai/gpt-4o-mini"
+# Google Gemini
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 # Supabase
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
